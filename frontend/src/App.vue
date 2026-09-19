@@ -1,27 +1,60 @@
 <template>
-  <div class="min-h-screen bg-slate-900 text-slate-200">
+  <ExampleStatus v-if="store.loadState !== 'ready'" :mode="'overlay'"
+    :kind="store.loadState === 'loading' ? 'loading' : 'fatal'"
+    :message="store.fatalMessage" :issues="store.fatalIssues" :can-reset="isDev"
+    @retry="store.init()" @reset="resetAndReload" />
+
+  <div v-else class="min-h-screen bg-slate-900 text-slate-200">
     <header class="border-b border-slate-700 px-6 py-4">
       <h1 class="text-2xl font-bold text-cyan-400">SQL 查询可视化与执行计划分析器</h1>
       <p class="text-sm text-slate-500 mt-1">SQL语法解析 · 执行计划树 · ER图 · 复杂度评分 · 优化建议</p>
     </header>
+
+    <ExampleStatus v-if="store.degraded" :mode="'banner'" :issues="store.dataIssues" :can-reset="isDev"
+      @retry="store.init()" @reset="resetAndReload" />
+
     <div class="flex flex-col lg:flex-row gap-4 p-4">
       <div class="lg:w-2/5 space-y-4">
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center justify-between mb-3 gap-2">
             <h3 class="text-sm font-bold text-slate-400">SQL 编辑器</h3>
-            <div class="flex gap-2">
-              <select @change="(e) => { store.sql = SQL_TEMPLATES[+(e.target as HTMLSelectElement).value].sql }" class="text-xs bg-slate-900 border border-slate-600 rounded px-2 py-1 text-slate-300">
-                <option v-for="(t, i) in SQL_TEMPLATES" :key="i" :value="i">{{ t.name }}</option>
+            <div class="flex gap-2 items-center">
+              <select :value="store.selectedTemplateIndex"
+                @change="(e) => store.selectTemplate(+(e.target as HTMLSelectElement).value)"
+                class="text-xs bg-slate-900 border border-slate-600 rounded px-2 py-1 text-slate-300">
+                <option value="-1" disabled>选择示例…</option>
+                <option v-for="(t, i) in store.templates" :key="t.name" :value="i">{{ t.name }}</option>
               </select>
+              <button :disabled="!store.activeTemplate" @click="exportCurrent"
+                title="导出当前模板（含来源数据文件信息）"
+                class="text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed rounded px-2 py-1">
+                导出示例
+              </button>
             </div>
           </div>
-          <textarea v-model="store.sql" rows="12" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono text-green-400 focus:outline-none focus:border-cyan-500 resize-none"></textarea>
-          <button @click="store.analyze" class="w-full mt-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded text-sm font-bold">分析查询</button>
+          <textarea :value="store.sql" @input="onEdit" rows="12"
+            class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm font-mono text-green-400 focus:outline-none focus:border-cyan-500 resize-none"></textarea>
+          <button @click="store.analyze()" class="w-full mt-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded text-sm font-bold">分析查询</button>
+
+          <!-- 当前内容溯源：显示来自哪个数据文件、是否已被手动修改 -->
+          <div class="mt-2 text-[11px] text-slate-500 flex items-center justify-between gap-2 flex-wrap">
+            <span class="font-mono">
+              {{ store.activeTemplate
+                ? `模板来源：${store.templatesSource?.sourceFile}#${store.activeTemplate.name}`
+                : '自定义 SQL（已与模板脱钩）' }}
+              <span v-if="store.activeTemplate && store.dirty" class="text-amber-400">· 已手动修改</span>
+            </span>
+            <button @click="exportAll" class="text-cyan-500 hover:text-cyan-300 underline">导出整个示例库</button>
+          </div>
         </div>
         <div class="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <h3 class="text-sm font-bold text-slate-400 mb-3">数据库 Schema</h3>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-400">数据库 Schema</h3>
+            <span class="text-[11px] text-slate-600 font-mono">{{ originLabel(store.schemaSource) }}</span>
+          </div>
           <div class="space-y-2">
-            <div v-for="t in SCHEMA_TABLES" :key="t.name" @click="store.activeSchema = store.activeSchema?.name === t.name ? null : t"
+            <div v-for="t in store.tables" :key="t.name"
+              @click="store.activeSchema = store.activeSchema?.name === t.name ? null : t"
               :class="['cursor-pointer rounded border p-2 text-xs transition-all', store.activeSchema?.name === t.name ? 'border-cyan-500 bg-cyan-900/20' : 'border-slate-700 hover:border-slate-500']">
               <div class="flex justify-between items-center">
                 <span class="font-bold text-slate-200">{{ t.name }}</span>
@@ -74,10 +107,53 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, defineComponent, h } from 'vue'
-import { useSQLStore, SQL_TEMPLATES, SCHEMA_TABLES } from './store/sql'
+import { useSQLStore } from './store/sql'
+import type { DataProvenance } from './core/types'
+import { exportTemplate, exportLibrary } from './core/exportExample'
+import ExampleStatus from './components/ExampleStatus.vue'
 
 const store = useSQLStore()
 const erCanvasRef = ref<HTMLCanvasElement | null>(null)
+const isDev = import.meta.env.DEV
+
+function originLabel(source: DataProvenance | null) {
+  if (!source) return ''
+  return source.origin === 'builtin'
+    ? `来源：内置副本（${source.sourceFile} 已损坏）`
+    : `来源：${source.sourceFile}`
+}
+
+function onEdit(e: Event) {
+  store.sql = (e.target as HTMLTextAreaElement).value
+  // 手动编辑即与模板脱钩，但分析结果仍与编辑内容保持同步
+  store.markManualEdit()
+  store.analyze()
+}
+
+function exportCurrent() {
+  if (!store.activeTemplate || store.dirty) return
+  exportTemplate(store.activeTemplate, store.selectedTemplateIndex, store.templatesSource!)
+}
+
+function exportAll() {
+  exportLibrary({
+    schema: store.tables,
+    templates: store.templates,
+    schemaSource: store.schemaSource!,
+    templatesSource: store.templatesSource!,
+  })
+}
+
+/** 本地开发恢复：由 vite 插件提供的 dev 接口把内置副本写回 public/data */
+async function resetAndReload() {
+  try {
+    const res = await fetch(`${import.meta.env.BASE_URL || '/'}__dev/reset-examples`, { method: 'POST' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await store.init()
+  } catch (err) {
+    alert(`恢复失败：${err instanceof Error ? err.message : err}。可手动用 src/data/builtin 下的文件覆盖 public/data。`)
+  }
+}
 
 const PlanNode = defineComponent({
   props: { node: Object, depth: Number },
@@ -136,7 +212,7 @@ function drawER() {
   })
 
   // Draw table boxes
-  tables.forEach((t, i) => {
+  tables.forEach((t) => {
     const pos = positions[t]
     if (!pos) return
     const x = pos.x, y = pos.y
@@ -152,7 +228,7 @@ function drawER() {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(t, x, y - 10)
-    const schema = SCHEMA_TABLES.find(s => s.name === t)
+    const schema = store.tables.find(s => s.name === t)
     if (schema) {
       ctx.fillStyle = '#64748b'
       ctx.font = '10px monospace'
@@ -161,6 +237,9 @@ function drawER() {
   })
 }
 
-onMounted(() => { store.analyze(); setTimeout(drawER, 200) })
+onMounted(async () => {
+  await store.init()
+  setTimeout(drawER, 200)
+})
 watch(() => store.parsed, () => setTimeout(drawER, 100), { deep: true })
 </script>

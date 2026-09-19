@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "name": "基础查询",
+      "description": "按状态过滤用户并限制返回行数",
+      "sql": "SELECT id, username, email\nFROM users\nWHERE status = 'active'\nLIMIT 100;"
+    },
+    {
+      "name": "多表JOIN",
+      "description": "用户、订单、商品三表内连接",
+      "sql": "SELECT u.username, o.id AS order_id, p.name AS product, o.amount\nFROM users u\nINNER JOIN orders o ON u.id = o.user_id\nINNER JOIN products p ON o.product_id = p.id\nWHERE o.status = 'completed'\nORDER BY o.created_at DESC\nLIMIT 50;"
+    },
+    {
+      "name": "聚合分析",
+      "description": "按品类统计订单量与收入",
+      "sql": "SELECT c.name AS category, COUNT(o.id) AS order_count, SUM(o.amount) AS revenue, AVG(o.amount) AS avg_amount\nFROM categories c\nLEFT JOIN products p ON c.id = p.category_id\nLEFT JOIN orders o ON p.id = o.product_id\nGROUP BY c.id, c.name\nHAVING COUNT(o.id) > 10\nORDER BY revenue DESC;"
+    },
+    {
+      "name": "子查询",
+      "description": "用 IN 子查询找出高额订单用户",
+      "sql": "SELECT username, email\nFROM users\nWHERE id IN (\n  SELECT DISTINCT user_id\n  FROM orders\n  WHERE amount > 1000\n  AND created_at >= '2024-01-01'\n)\nORDER BY username;"
+    },
+    {
+      "name": "全表扫描",
+      "description": "对索引列使用函数导致无法走索引",
+      "sql": "SELECT *\nFROM orders\nWHERE YEAR(created_at) = 2024;"
+    }
+  ]
+}
