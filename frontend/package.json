@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "validate:data": "node scripts/validate-data.mjs",
+    "predev": "node scripts/validate-data.mjs",
     "dev": "vite --host",
+    "prebuild": "node scripts/validate-data.mjs",
     "build": "vue-tsc && vite build",
     "preview": "vite preview"
   },

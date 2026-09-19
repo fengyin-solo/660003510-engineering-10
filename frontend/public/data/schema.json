@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "description": "示例数据库表结构定义，供 SQL 分析器读取与校验",
+  "tables": [
+    {
+      "name": "users",
+      "rowCount": 50000,
+      "columns": [
+        { "name": "id", "type": "INT", "pk": true },
+        { "name": "username", "type": "VARCHAR(50)" },
+        { "name": "email", "type": "VARCHAR(100)" },
+        { "name": "created_at", "type": "TIMESTAMP" },
+        { "name": "status", "type": "ENUM" }
+      ]
+    },
+    {
+      "name": "orders",
+      "rowCount": 200000,
+      "columns": [
+        { "name": "id", "type": "INT", "pk": true },
+        { "name": "user_id", "type": "INT", "fk": "users.id" },
+        { "name": "product_id", "type": "INT", "fk": "products.id" },
+        { "name": "amount", "type": "DECIMAL" },
+        { "name": "status", "type": "VARCHAR(20)" },
+        { "name": "created_at", "type": "TIMESTAMP" }
+      ]
+    },
+    {
+      "name": "products",
+      "rowCount": 10000,
+      "columns": [
+        { "name": "id", "type": "INT", "pk": true },
+        { "name": "name", "type": "VARCHAR(200)" },
+        { "name": "price", "type": "DECIMAL" },
+        { "name": "category_id", "type": "INT", "fk": "categories.id" },
+        { "name": "stock", "type": "INT" }
+      ]
+    },
+    {
+      "name": "categories",
+      "rowCount": 100,
+      "columns": [
+        { "name": "id", "type": "INT", "pk": true },
+        { "name": "name", "type": "VARCHAR(50)" },
+        { "name": "parent_id", "type": "INT" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "description": "示例数据清单：业务代码只按本清单声明的文件加载数据，新增数据文件需在此登记",
+  "files": [
+    { "id": "schema", "kind": "schema", "file": "schema.json", "required": true },
+    { "id": "templates", "kind": "templates", "file": "templates.json", "required": true }
+  ]
+}
